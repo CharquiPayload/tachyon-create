@@ -1,0 +1,18 @@
+# Gradle and the builds
+.gradle/
+build/
+out/
+
+# IDEs
+.idea/
+*.iml
+.vscode/
+
+# Tachyon's and Create's jars, which are theirs (README, Building)
+libs/
+
+# The server to try it in: its world, its settings, its password
+run/
+
+# What the test runs leave in the project folder (the game's logger)
+logs/

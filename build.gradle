@@ -1,0 +1,92 @@
+// Tachyon: Create, an expansion for Tachyon: bots that work Create's machines by hand.
+// It compiles against Tachyon's jar and Create's, which it never copies into its own: both go in the
+// server's mods/ folder next to it. See "Building" in the README for where the jars come from.
+plugins {
+    id 'java'
+    id 'net.neoforged.moddev' version '2.0.78'
+}
+
+version = '0.1.0'
+group = 'tachyoncreate'
+base { archivesName = 'tachyon-create' }
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(21)
+}
+
+neoForge {
+    // The same NeoForge as Tachyon's build.gradle: an expansion runs in the same server.
+    version = '21.1.248'
+
+    mods {
+        tachyon_create {
+            sourceSet sourceSets.main
+        }
+    }
+
+    // A server to try it in: run/, with Tachyon's and Create's jars in run/mods (README, Trying it).
+    runs {
+        server {
+            server()
+            gameDirectory = project.file('run')
+            jvmArguments.addAll('-Xmx4G', '-Dtachyon_create.dev=true')   // the script brain, for trying the tools (DevBrain)
+            programArguments.add('--nogui')
+        }
+    }
+
+    // The tests load classes that name Minecraft's: on the classpath, though no game is started.
+    addModdingDependenciesTo sourceSets.test
+}
+
+repositories { mavenCentral() }
+
+// Tachyon's jar, which holds the expansion API (the package tachyon.api), and Create's. Given with
+// -PtachyonJar=<path> and -PcreateJar=<path>, or the environment's TACHYON_JAR and CREATE_JAR;
+// otherwise libs/tachyon.jar and libs/create.jar.
+def tachyonJar = (findProperty('tachyonJar') ?: System.getenv('TACHYON_JAR') ?: 'libs/tachyon.jar')
+def createJar = (findProperty('createJar') ?: System.getenv('CREATE_JAR') ?: 'libs/create.jar')
+
+dependencies {
+    // compileOnly: each is its own jar in the server's mods folder, never shaded into this one.
+    compileOnly files(tachyonJar)
+    compileOnly files(createJar)
+    // What Create's jar carries inside it (Flywheel, Ponder, Registrate): some of its classes name them.
+    compileOnly fileTree('libs/create-inside') { include '*.jar' }
+    testImplementation files(tachyonJar)
+    testImplementation platform('org.junit:junit-bom:5.11.3')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+// A build against a Tachyon jar without the API, or with no Create jar, fails here plainly instead of
+// with a hundred "cannot find symbol" lines.
+tasks.register('checkJars') {
+    inputs.files(files(tachyonJar, createJar)).withPropertyName('jars')
+    doLast {
+        def check = { path, entry, what ->
+            def jar = file(path)
+            if (!jar.isFile()) throw new GradleException("${what}'s jar is not at ${jar}: see Building in the README")
+            def zip = new java.util.zip.ZipFile(jar)
+            try {
+                if (zip.getEntry(entry) == null) throw new GradleException("${jar} is not the ${what} this needs (no ${entry})")
+            } finally {
+                zip.close()
+            }
+        }
+        check(tachyonJar, 'tachyon/api/Expansion.class', 'Tachyon')
+        check(createJar, 'com/simibubi/create/content/processing/burner/BlazeBurnerBlock.class', 'Create')
+    }
+}
+tasks.named('compileJava') { dependsOn 'checkJars' }
+
+tasks.named('test') {
+    useJUnitPlatform()
+    testLogging {
+        events 'passed', 'failed', 'skipped'
+        exceptionFormat 'full'
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}

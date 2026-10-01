@@ -1,0 +1,40 @@
+modLoader = "javafml"
+loaderVersion = "[4,)"
+license = "MIT"
+
+[[mods]]
+modId = "tachyon_create"
+version = "0.1.0"
+displayName = "Tachyon: Create"
+description = '''Tachyon's bots at work in a Create factory: they turn hand cranks, put things into machines and take out what they made, and keep blaze burners lit.'''
+
+# Tachyon first (ordering AFTER), from the version whose expansion API (1.1) this uses: NeoForge then
+# says plainly which Tachyon it needs, instead of a crash as it loads.
+[[mods.dependencies.tachyon_create]]
+modId = "tachyon"
+type = "required"
+versionRange = "[0.5.0,)"
+ordering = "AFTER"
+side = "BOTH"
+
+# Create 6: the machines' classes this knows are Create 6's.
+[[mods.dependencies.tachyon_create]]
+modId = "create"
+type = "required"
+versionRange = "[6.0.0,7.0)"
+ordering = "AFTER"
+side = "BOTH"
+
+[[mods.dependencies.tachyon_create]]
+modId = "neoforge"
+type = "required"
+versionRange = "[21.1.0,)"
+ordering = "NONE"
+side = "BOTH"
+
+[[mods.dependencies.tachyon_create]]
+modId = "minecraft"
+type = "required"
+versionRange = "[1.21.1,1.22)"
+ordering = "NONE"
+side = "BOTH"
