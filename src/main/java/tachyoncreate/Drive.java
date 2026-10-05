@@ -34,12 +34,18 @@ final class Drive extends Job {
     /**
      * A stop: a station by name, or the one nearest a player ({@code fetch}); and what it waits for
      * there: {@code seconds}, {@code players} more players aboard, or {@code until} someone is aboard,
-     * those two for {@code most} seconds at most.
+     * those two for {@code most} seconds at most. A stop a planner chose ({@link Planner}) names its
+     * station by its id too ({@code exact}): names need not be one a station.
      */
-    record Stop(String station, String fetch, int seconds, int players, String until, int most) {
+    record Stop(String station, String fetch, int seconds, int players, String until, int most, UUID exact) {
 
         static Stop at(String station) {
-            return new Stop(station, null, 0, 0, null, 0);
+            return new Stop(station, null, 0, 0, null, 0, null);
+        }
+
+        /** That station, by its id, waited at {@code seconds}. */
+        static Stop exactly(GlobalStation s, int seconds) {
+            return new Stop(s.name, null, seconds, 0, null, 0, s.id);
         }
 
         /** "Farm", "Farm (30s)", "Farm (until 2 players aboard, 5m at most)": for what it says. */
@@ -54,7 +60,25 @@ final class Drive extends Job {
         }
     }
 
-    private enum Phase { BOARD, CONTROLS, GO, WAIT }
+    private enum Phase { BOARD, CONTROLS, GO, WAIT, REST }
+
+    /**
+     * Its stops chosen as it goes, one at a time, by what is to be done (the mail: {@link Mail}),
+     * instead of a list given at the start.
+     */
+    interface Planner {
+        /** The next stop from where the train is ({@code here}: where it stands, or null); null when there is none now. */
+        Stop next(ServerPlayer body, Train t, GlobalStation here);
+
+        /** It leaves a stop, done waiting there: what came of it, noted. */
+        void left(Train t, GlobalStation at);
+
+        /** What came of it all, in words, once it is over. */
+        String said();
+
+        /** How long it rests when there is no stop now, going round (ticks); then it is asked again. */
+        int rest();
+    }
 
     /** How long it may take to get on, and to get from one stop to the next. */
     private static final int BOARD_MAX = 20 * 60, LEG_MAX = 20 * 60 * 10;
@@ -65,6 +89,8 @@ final class Drive extends Job {
 
     private final List<Stop> stops;
     private final boolean loop;
+    /** Who chooses its stops as it goes; null for the list it was given. */
+    private final Planner planner;
     private Phase phase = Phase.BOARD;
     private int index, tries, done;
     private long phaseAt = -1;
@@ -77,8 +103,16 @@ final class Drive extends Job {
     private boolean pressing;
 
     Drive(List<Stop> stops, boolean loop) {
-        this.stops = stops;
+        this.stops = new ArrayList<>(stops);
         this.loop = loop;
+        this.planner = null;
+    }
+
+    /** Its stops chosen as it goes by {@code planner}; round and round when {@code loop} (resting when there is no stop). */
+    Drive(Planner planner, boolean loop) {
+        this.stops = new ArrayList<>();
+        this.loop = loop;
+        this.planner = planner;
     }
 
     @Override
@@ -98,6 +132,9 @@ final class Drive extends Job {
             }
             case WAIT -> {
                 return await(body, now);
+            }
+            case REST -> {
+                return now - phaseAt >= planner.rest() ? next(Phase.GO, now) : null;
             }
         }
         return null;
@@ -158,6 +195,15 @@ final class Drive extends Job {
         if (t == null) return over(body, "the train is gone");
         if (t.derailed) return over(body, "the train came off its tracks");
         if (Rails.riding(body) != carriage || !body.getUUID().equals(carriage.getControllingPlayer().orElse(null))) return back(now);
+        if (index >= stops.size()) {
+            // A planner's next stop, chosen now, from where the train is.
+            Stop n = planner == null ? null : planner.next(body, t, t.getCurrentStation());
+            if (n == null) {
+                if (planner != null && loop) return next(Phase.REST, now);
+                return over(body, planner == null ? "no stops" : planner.said());
+            }
+            stops.add(n);
+        }
         Stop stop = stops.get(index);
         if (station == null) {
             station = resolve(body, t, stop);
@@ -180,6 +226,11 @@ final class Drive extends Job {
 
     /** The station a stop means, on this train's tracks; null, with why in {@link #said}. */
     private GlobalStation resolve(ServerPlayer body, Train t, Stop stop) {
+        if (stop.exact() != null) {
+            for (GlobalStation s : Rails.stations(t)) if (stop.exact().equals(s.id)) return s;
+            said = stop.station() + " is gone from the tracks";
+            return null;
+        }
         if (stop.fetch() != null) {
             ServerPlayer p = body.server.getPlayerList().getPlayerByName(stop.fetch());
             if (p == null) {
@@ -217,6 +268,13 @@ final class Drive extends Job {
         if (!ready) return null;
         done++;
         String here = station.name;
+        if (planner != null) {
+            // On to whatever its planner chooses next (asked for in go).
+            planner.left(t, station);
+            station = null;
+            index++;
+            return next(Phase.GO, now);
+        }
         station = null;
         if (++index < stops.size()) return next(Phase.GO, now);
         if (loop) {
@@ -298,6 +356,7 @@ final class Drive extends Job {
             case CONTROLS -> "taking the train's controls";
             case GO -> "driving the train to " + (station != null ? station.name : stop == null ? "its stop" : stop.words());
             case WAIT -> "waiting at " + (station != null ? station.name : "the station") + (stop == null ? "" : ": " + stop.words());
+            case REST -> "resting at the station till its next round";
         };
     }
 

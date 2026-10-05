@@ -26,8 +26,8 @@ import java.util.UUID;
 /**
  * A railway to try the trains on, for a development server only ({@code -Dtachyon_create.dev=true},
  * as {@link DevBrain}): {@code /tcdev rail <pos>} lays a straight track 64 blocks east of a place,
- * with a station "West" at its west end and "East" near its east end, and a one-bogey train at East
- * with its controls and a seat. {@code /tcdev assemble <pos>} assembles it again, from East's place.
+ * with stations "West" at its west end, "East" and "Far" near its east end, and a one-bogey
+ * train at East with controls at both ends, a seat and a chest. {@code /tcdev assemble <pos>} assembles it again, from East's place.
  */
 final class DevTrain implements Ability {
 
@@ -43,6 +43,11 @@ final class DevTrain implements Ability {
         kit.on(RegisterCommandsEvent.class, e -> e.getDispatcher().register(Commands.literal("tcdev").requires(s -> s.hasPermission(2))
                 .then(Commands.literal("rail").then(Commands.argument("pos", BlockPosArgument.blockPos()).executes(DevTrain::rail)))
                 .then(Commands.literal("info").executes(DevTrain::info))
+                .then(Commands.literal("postbox").then(Commands.argument("station", BlockPosArgument.blockPos())
+                        .then(Commands.argument("at", BlockPosArgument.blockPos())
+                                .then(Commands.argument("address", com.mojang.brigadier.arguments.StringArgumentType.word()).executes(DevTrain::postbox)))))
+                .then(Commands.literal("package").then(Commands.argument("at", BlockPosArgument.blockPos())
+                        .then(Commands.argument("address", com.mojang.brigadier.arguments.StringArgumentType.word()).executes(DevTrain::pack))))
                 .then(Commands.literal("name").then(Commands.argument("pos", BlockPosArgument.blockPos())
                         .then(Commands.argument("name", com.mojang.brigadier.arguments.StringArgumentType.greedyString()).executes(DevTrain::name))))
                 .then(Commands.literal("disassemble").then(Commands.argument("pos", BlockPosArgument.blockPos()).executes(DevTrain::disassemble)))
@@ -57,18 +62,22 @@ final class DevTrain implements Ability {
             level.setBlock(o.offset(i, -1, 1), state("minecraft:stone"), 3);
             level.setBlock(o.offset(i, 0, 0), with(state("create:track"), "shape", "xo"), 3);
         }
-        station(level, o.offset(WEST, 0, 1), "West", false);
+        station(level, o.offset(WEST, 0, 1), "West", true);
+        // Far, east of East: a stop for a train going east (East and West are for one going west).
+        station(level, o.offset(EAST + 10, 0, 1), "Far", false);
         station(level, o.offset(EAST, 0, 1), "East", true);
         // The train: a bogey on the track a block past East (where its assembly looks first), casing
-        // on it, controls facing east (forward: its assembly's way) and a seat each side, glued.
+        // on it, controls at both ends of it (east, forward for its assembly, and west: it goes both
+        // ways), a seat by them and a chest for the mail, glued.
         BlockPos b = o.offset(EAST + 1, 1, 0);
         level.setBlock(b, with(state("create:small_bogey"), "axis", "x"), 3);
-        for (int dx = -1; dx <= 1; dx++) level.setBlock(b.offset(dx, 1, 0), state("create:andesite_casing"), 3);
+        for (int dx = -2; dx <= 2; dx++) level.setBlock(b.offset(dx, 1, 0), state("create:andesite_casing"), 3);
+        level.setBlock(b.offset(-1, 2, 0), with(state("create:controls"), "facing", "west"), 3);
         level.setBlock(b.offset(0, 2, 0), with(state("create:controls"), "facing", "east"), 3);
-        level.setBlock(b.offset(-1, 2, 0), state("create:white_seat"), 3);
         level.setBlock(b.offset(1, 2, 0), state("create:white_seat"), 3);
+        level.setBlock(b.offset(2, 2, 0), state("minecraft:chest"), 3);
         level.addFreshEntity(new com.simibubi.create.content.contraptions.glue.SuperGlueEntity(level,
-                com.simibubi.create.content.contraptions.glue.SuperGlueEntity.span(b.offset(-1, 0, 0), b.offset(1, 2, 0))));
+                com.simibubi.create.content.contraptions.glue.SuperGlueEntity.span(b.offset(-2, 0, 0), b.offset(2, 2, 0))));
         c.getSource().sendSuccess(() -> Component.literal("rail laid; now /tcdev assemble " + o.getX() + " " + o.getY() + " " + o.getZ()), false);
         return Command.SINGLE_SUCCESS;
     }
@@ -82,6 +91,7 @@ final class DevTrain implements Ability {
         }
         // Named now: a station's name sticks once its point on the tracks is made, a tick or two after it is placed.
         if (level.getBlockEntity(o.offset(WEST, 0, 1)) instanceof StationBlockEntity w) w.updateName("West");
+        if (level.getBlockEntity(o.offset(EAST + 10, 0, 1)) instanceof StationBlockEntity f) f.updateName("Far");
         s.updateName("East");
         boolean mode = s.enterAssemblyMode(null);
         s.refreshAssemblyInfo();
@@ -95,6 +105,42 @@ final class DevTrain implements Ability {
         c.getSource().sendSuccess(() -> Component.literal("assembly mode " + mode + "; station " + (s.getStation() == null ? "none"
                 : s.getStation().name + ", train there: " + (s.getStation().getPresentTrain() != null))), false);
         return Command.SINGLE_SUCCESS;
+    }
+
+    /** A postbox at a place, for an address, joined to the station at another, as a player's linked one is. */
+    private static int postbox(CommandContext<CommandSourceStack> c) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        BlockPos station = BlockPosArgument.getLoadedBlockPos(c, "station"), at = BlockPosArgument.getLoadedBlockPos(c, "at");
+        String address = com.mojang.brigadier.arguments.StringArgumentType.getString(c, "address");
+        ServerLevel level = c.getSource().getLevel();
+        level.setBlock(at, state("create:white_postbox"), 3);
+        if (!(level.getBlockEntity(at) instanceof com.simibubi.create.content.logistics.packagePort.PackagePortBlockEntity p)) {
+            c.getSource().sendFailure(Component.literal("no postbox placed"));
+            return 0;
+        }
+        p.addressFilter = address;
+        p.target = new com.simibubi.create.content.logistics.packagePort.PackagePortTarget.TrainStationFrogportTarget(station.subtract(at));
+        p.target.register(p, level, at);
+        p.setChanged();
+        boolean joined = level.getBlockEntity(station) instanceof StationBlockEntity s && s.getStation() != null
+                && s.getStation().connectedPorts.containsKey(at);
+        c.getSource().sendSuccess(() -> Component.literal("postbox for " + address + " joined: " + joined), false);
+        return 1;
+    }
+
+    /** A package for an address (a dirt in it) put in the postbox at a place. */
+    private static int pack(CommandContext<CommandSourceStack> c) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        BlockPos at = BlockPosArgument.getLoadedBlockPos(c, "at");
+        String address = com.mojang.brigadier.arguments.StringArgumentType.getString(c, "address");
+        if (!(c.getSource().getLevel().getBlockEntity(at) instanceof com.simibubi.create.content.logistics.packagePort.PackagePortBlockEntity p)) {
+            c.getSource().sendFailure(Component.literal("no postbox there"));
+            return 0;
+        }
+        net.minecraft.world.item.ItemStack box = com.simibubi.create.content.logistics.box.PackageItem.containing(
+                java.util.List.of(new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.DIRT)));
+        com.simibubi.create.content.logistics.box.PackageItem.addAddress(box, address);
+        net.minecraft.world.item.ItemStack rest = net.neoforged.neoforge.items.ItemHandlerHelper.insertItemStacked(p.inventory, box, false);
+        c.getSource().sendSuccess(() -> Component.literal("package for " + address + " in the postbox: " + rest.isEmpty()), false);
+        return 1;
     }
 
     private static int name(CommandContext<CommandSourceStack> c) throws com.mojang.brigadier.exceptions.CommandSyntaxException {

@@ -26,6 +26,8 @@ final class Rail implements Ability {
 
     /** Its setting's key: {@code /bot Ada set fetch_wait 300}. */
     static final String FETCH_WAIT = "fetch_wait";
+    /** Its mail rounds' rest, in seconds: {@code /bot Ada set mail_rest 300}. */
+    static final String MAIL_REST = "mail_rest";
 
     /** How near a train a bot must be (or riding one) for its mind to be offered these tools, and how often that is looked at. */
     private static final double NEAR = 48;
@@ -42,7 +44,10 @@ final class Rail implements Ability {
     public void declare(Kit kit) {
         kit.number(FETCH_WAIT, 300, 30, MOST_SECONDS, "How long it waits at a station for the player it went to pick up, in seconds.")
                 .label("Pick-up wait").group(Factory.GROUP).advanced();
+        kit.number(MAIL_REST, 120, 10, 3600, "How long it rests at a station between its mail rounds, when it goes round, in seconds.")
+                .label("Mail round rest").group(Factory.GROUP).advanced();
         tools(kit);
+        mailTools(kit);
         words(kit);
         rows(kit);
     }
@@ -56,7 +61,8 @@ final class Rail implements Ability {
                 .rule("Create's trains: you drive them yourself, sitting at their controls (a player is never a train's conductor,"
                         + " but drives by hand). drive_train takes one to a station; train_route keeps one going round its stops,"
                         + " waiting at each as you say, until told to stop; fetch_player goes to the station nearest a player,"
-                        + " waits for them to get on and brings them back.")
+                        + " waits for them to get on and brings them back; mail_run takes a train with chests round the stations with"
+                        + " postboxes, where Create swaps the mail; train_packages puts packages in its chests or takes them out.")
                 .offeredWhen(Rail::nearTrain)
                 .run(call -> {
                     String station = call.text("station");
@@ -99,13 +105,99 @@ final class Rail implements Ability {
                 });
     }
 
+    /** Mail: a run (or rounds) taking packages to the stations they're for, and the train's packages loaded or unloaded. */
+    private void mailTools(Kit kit) {
+        kit.tool("mail_run", "Drive a Create train with chests round the stations with postboxes: Create swaps the mail where"
+                        + " it stops (packages for a postbox off, the ones waiting there on). You stop at the stations the packages"
+                        + " aboard are for, and, picking up, at every station with postboxes, the nearest first.")
+                .optional("pick_up", "boolean", "Stop at every station with postboxes to take on what waits there; true when left out")
+                .optional("loop", "boolean", "Go round again and again, resting between rounds, until told to stop")
+                .offeredWhen(Rail::nearTrain)
+                .run(call -> {
+                    boolean loop = call.flag("loop", false);
+                    Mail mail = new Mail(call.flag("pick_up", true), (int) call.bot().number(MAIL_REST) * 20);
+                    call.start(new Drive(mail, loop), "running the mail train");
+                    return "started: getting on the train to run the mail" + (loop ? ", round and round until told to stop" : "")
+                            + "; not done yet";
+                });
+
+        kit.tool("train_packages", "Put the packages you carry into the chests of the Create train you're on or next to,"
+                        + " or take packages out of them (all, or those for an address).")
+                .param("action", "string", "load (from your bag into the train) or unload (from the train into your bag)")
+                .optional("address", "string", "Only packages for this address; leave it out for all")
+                .offeredWhen(Rail::nearTrain)
+                .run(call -> cargo(call.bot().body(), call.text("action"), call.text("address")));
+    }
+
+    /** How near a carriage it must be to reach into its chests: a player's reach and the carriage's size. */
+    private static final double CARGO_REACH = 6;
+
+    /**
+     * Packages from its bag into the chests of the train it rides or stands by ({@code load}), or out of
+     * them into its bag ({@code unload}), all or those for {@code address}, as a player does at a train's
+     * chest. What it did, in words.
+     */
+    static String cargo(ServerPlayer body, String action, String address) {
+        boolean load = action != null && action.trim().equalsIgnoreCase("load");
+        boolean unload = action != null && action.trim().equalsIgnoreCase("unload");
+        if (!load && !unload) return "say load or unload";
+        com.simibubi.create.content.trains.entity.CarriageContraptionEntity c = Rails.riding(body);
+        if (c == null || c.getCarriage().storage == null) {
+            List<com.simibubi.create.content.trains.entity.CarriageContraptionEntity> near = Rails.withCargo(body, CARGO_REACH);
+            c = near.isEmpty() ? null : near.get(0);
+        }
+        if (c == null) return "I'm not by a train with chests";
+        var cargo = Rails.cargo(c.getCarriage().train);
+        if (cargo.isEmpty()) return "that train has no chests";
+        String only = address == null || address.isBlank() ? null : address.trim();
+        java.util.function.Predicate<net.minecraft.world.item.ItemStack> mine = s -> com.simibubi.create.content.logistics.box.PackageItem.isPackage(s)
+                && (only == null || com.simibubi.create.content.logistics.box.PackageItem.matchAddress(s, only));
+        int moved = 0;
+        boolean full = false;
+        var inv = body.getInventory();
+        if (load) {
+            for (int i = 0; i < inv.items.size() && !full; i++) {
+                net.minecraft.world.item.ItemStack s = inv.items.get(i);
+                if (s.isEmpty() || !mine.test(s)) continue;
+                int had = s.getCount();
+                net.minecraft.world.item.ItemStack rest = s.copy();
+                for (var h : cargo) {
+                    rest = net.neoforged.neoforge.items.ItemHandlerHelper.insertItemStacked(h, rest, false);
+                    if (rest.isEmpty()) break;
+                }
+                inv.items.set(i, rest);
+                moved += had - rest.getCount();
+                full = !rest.isEmpty();
+            }
+            inv.setChanged();
+            if (moved == 0) return full ? "the train's chests are full" : "I carry no packages" + (only == null ? "" : " for " + only);
+            return "put " + moved + (moved == 1 ? " package" : " packages") + " in the train's chests" + (full ? "; they're full now" : "");
+        }
+        for (var h : cargo) {
+            for (int i = 0; i < h.getSlots() && !full; i++) {
+                net.minecraft.world.item.ItemStack s = h.getStackInSlot(i);
+                if (s.isEmpty() || !mine.test(s)) continue;
+                net.minecraft.world.item.ItemStack out = h.extractItem(i, s.getCount(), false);
+                int n = out.getCount();
+                if (!inv.add(out)) {
+                    // What did not fit goes back.
+                    if (!out.isEmpty()) h.insertItem(i, out, false);
+                    full = true;
+                }
+                moved += n - out.getCount();
+            }
+        }
+        if (moved == 0) return full ? "my bag is full" : "the train carries no packages" + (only == null ? "" : " for " + only);
+        return "took " + moved + (moved == 1 ? " package" : " packages") + " out of the train's chests" + (full ? "; my bag is full now" : "");
+    }
+
     /**
      * The errand to pick up {@code who}: to the station nearest them, waiting until they're aboard (for
      * {@code wait} seconds at most), then to {@code back}, or where the train stands when it sets off.
      */
     static Drive fetch(Bot bot, String who, String back, int wait) {
         List<Drive.Stop> stops = new ArrayList<>();
-        stops.add(new Drive.Stop(null, who, 0, 0, who, wait));
+        stops.add(new Drive.Stop(null, who, 0, 0, who, wait, null));
         String home = back == null || back.isBlank() ? null : back.trim();
         if (home == null) home = Rails.stationHere(bot.body());
         if (home != null) stops.add(Drive.Stop.at(home));
@@ -149,7 +241,7 @@ final class Rail implements Ability {
                 }
             }
             String name = String.join(" ", java.util.Arrays.copyOfRange(w, 0, end));
-            out.add(new Drive.Stop(name, null, clamp(seconds), Math.min(players, 100), until, clamp(most)));
+            out.add(new Drive.Stop(name, null, clamp(seconds), Math.min(players, 100), until, clamp(most), null));
         }
         return out;
     }
@@ -180,12 +272,38 @@ final class Rail implements Ability {
         // /bot <who> route <stops...>: round and round, until told to stop.
         kit.botWord("route", (word, context) -> word
                 .then(Commands.argument("stops", StringArgumentType.greedyString()).executes(Rail::route)));
+        // /bot <who> mail [loop]
+        kit.botWord("mail", (word, context) -> word
+                .executes(c -> mail(c, false))
+                .then(Commands.literal("loop").executes(c -> mail(c, true))));
+        // /bot <who> cargo load|unload [<address>]
+        kit.botWord("cargo", (word, context) -> word
+                .then(Commands.literal("load").executes(c -> cargo(c, "load", null))
+                        .then(Commands.argument("address", StringArgumentType.greedyString()).executes(c -> cargo(c, "load", StringArgumentType.getString(c, "address")))))
+                .then(Commands.literal("unload").executes(c -> cargo(c, "unload", null))
+                        .then(Commands.argument("address", StringArgumentType.greedyString()).executes(c -> cargo(c, "unload", StringArgumentType.getString(c, "address"))))));
         // /bot <who> fetch <player> [<seconds>]
         kit.botWord("fetch", (word, context) -> word
                 .then(Commands.argument("player", EntityArgument.player())
                         .executes(c -> fetch(c, false))
                         .then(Commands.argument("seconds", IntegerArgumentType.integer(30, MOST_SECONDS))
                                 .executes(c -> fetch(c, true)))));
+    }
+
+    private static int mail(CommandContext<CommandSourceStack> c, boolean loop) throws CommandSyntaxException {
+        return Factory.each(c, loop ? "running the mail train round and round" : "running the mail train", bot -> {
+            bot.start(new Drive(new Mail(true, (int) bot.number(MAIL_REST) * 20), loop), "running the mail train");
+            return null;
+        });
+    }
+
+    private static int cargo(CommandContext<CommandSourceStack> c, String action, String address) throws CommandSyntaxException {
+        List<tachyon.api.Bot> them = tachyon.api.TachyonCommands.bots(c);
+        if (them.isEmpty()) return 0;
+        List<String> said = new ArrayList<>();
+        for (tachyon.api.Bot b : them) said.add(b.name() + ": " + cargo(b.body(), action, address));
+        tachyon.api.TachyonCommands.say(c.getSource(), String.join("\n", said));
+        return them.size();
     }
 
     private static int drive(CommandContext<CommandSourceStack> c) throws CommandSyntaxException {
@@ -221,6 +339,9 @@ final class Rail implements Ability {
         kit.botRow("drive_now").label("Drive a train").icon("create:controls").group(Factory.GROUP)
                 .about("Gets on the nearest train with controls and drives it to the station you name.")
                 .asks("To which station?", "Its name, as its sign says.", 60, "drive");
+        kit.botRow("mail_now").label("Run the mail train").icon("create:white_postbox").group(Factory.GROUP)
+                .about("Drives the nearest train with chests round the stations with postboxes, leaving and taking on the mail.")
+                .runs("mail");
         kit.botRow("fetch_now").label("Pick me up by train").icon("create:track_station").group(Factory.GROUP)
                 .about("Drives the nearest train to the station nearest you, waits for you to get on, and brings you back.")
                 .asks("Who to pick up?", "A player's name.", 40, "fetch");

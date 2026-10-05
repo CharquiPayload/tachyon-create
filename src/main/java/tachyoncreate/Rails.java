@@ -171,6 +171,60 @@ final class Rails {
         return s == null ? null : s.name;
     }
 
+    // --- the mail ---------------------------------------------------------------------------------------
+
+    /** What a train carries: each of its carriages' chests and vaults, as one handler each; none for none. */
+    static List<net.neoforged.neoforge.items.IItemHandlerModifiable> cargo(Train t) {
+        List<net.neoforged.neoforge.items.IItemHandlerModifiable> out = new ArrayList<>();
+        for (var c : t.carriages) {
+            var inv = c.storage == null ? null : c.storage.getAllItems();
+            if (inv != null && inv.getSlots() > 0) out.add(inv);
+        }
+        return out;
+    }
+
+    /** How many packages a train carries, of those whose address {@code which} takes (null: all). */
+    static int packages(Train t, java.util.function.Predicate<String> which) {
+        int n = 0;
+        for (var inv : cargo(t)) {
+            for (int i = 0; i < inv.getSlots(); i++) {
+                var s = inv.getStackInSlot(i);
+                if (com.simibubi.create.content.logistics.box.PackageItem.isPackage(s)
+                        && (which == null || which.test(com.simibubi.create.content.logistics.box.PackageItem.getAddress(s)))) {
+                    n += s.getCount();
+                }
+            }
+        }
+        return n;
+    }
+
+    /** Whether a package for {@code address} is left at a station: one of its postboxes takes that address. */
+    static boolean takes(GlobalStation s, String address) {
+        for (var port : s.connectedPorts.values()) {
+            if (port.address != null && com.simibubi.create.content.logistics.box.PackageItem.matchAddress(address, port.address)) return true;
+        }
+        return false;
+    }
+
+    /** The stations of a train's network with postboxes: where it takes mail and leaves it. */
+    static List<GlobalStation> mailStations(Train t) {
+        List<GlobalStation> out = new ArrayList<>();
+        for (GlobalStation s : stations(t)) if (!s.connectedPorts.isEmpty()) out.add(s);
+        return out;
+    }
+
+    /** The carriages within {@code radius} that carry something (chests, vaults), the nearest first. */
+    static List<CarriageContraptionEntity> withCargo(ServerPlayer body, double radius) {
+        List<CarriageContraptionEntity> out = new ArrayList<>();
+        for (CarriageContraptionEntity c : body.level().getEntitiesOfClass(CarriageContraptionEntity.class,
+                new AABB(body.blockPosition()).inflate(radius))) {
+            if (c.getCarriage() != null && c.getCarriage().storage != null && c.getCarriage().storage.getAllItems() != null
+                    && c.getCarriage().storage.getAllItems().getSlots() > 0) out.add(c);
+        }
+        out.sort(Comparator.comparingDouble(c -> c.distanceToSqr(body)));
+        return out;
+    }
+
     /** A train by its id, while it is on the tracks; null once it is gone (taken apart). */
     static Train train(UUID id, net.minecraft.world.level.Level level) {
         return Create.RAILWAYS.sided(level).trains.get(id);
