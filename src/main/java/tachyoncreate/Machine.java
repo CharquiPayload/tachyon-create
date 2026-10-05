@@ -18,6 +18,9 @@ import com.simibubi.create.content.logistics.depot.DepotBlock;
 import com.simibubi.create.content.logistics.depot.EjectorBlock;
 import com.simibubi.create.content.logistics.funnel.AbstractFunnelBlock;
 import com.simibubi.create.content.logistics.funnel.FunnelBlock;
+import com.simibubi.create.content.logistics.packagePort.frogport.FrogportBlock;
+import com.simibubi.create.content.logistics.packagePort.postbox.PostboxBlock;
+import com.simibubi.create.content.logistics.stockTicker.StockTickerBlock;
 import com.simibubi.create.content.processing.basin.BasinBlock;
 import com.simibubi.create.content.processing.burner.BlazeBurnerBlock;
 import net.minecraft.core.BlockPos;
@@ -56,7 +59,11 @@ enum Machine {
     FUNNEL("funnel", In.CLICK_STACK, false, "funnel"),
     CRAFTER("mechanical crafter", In.CLICK_STACK, true, "mechanical_crafter", "crafter"),
     DEPLOYER("deployer", In.CLICK_STACK, true, "deployer"),
-    ITEM_DRAIN("item drain", In.THROW, true, "item_drain", "drain");
+    ITEM_DRAIN("item drain", In.THROW, true, "item_drain", "drain"),
+    /** Where a network's stock is seen and ordered from, through the stock keeper sitting by it ({@link Post}). */
+    STOCK_TICKER("stock ticker", In.NONE, false, "stock_ticker", "stock_keeper", "keeper", "ticker"),
+    /** A frogport or a postbox: where packages for its address arrive, and are taken out ({@link Post}). */
+    MAILBOX("mailbox", In.NONE, false, "mailbox", "frogport", "postbox", "package_port");
 
     /** How things go into a machine. */
     enum In {
@@ -123,6 +130,8 @@ enum Machine {
         if (b instanceof MechanicalCrafterBlock) return CRAFTER;
         if (b instanceof DeployerBlock) return DEPLOYER;
         if (b instanceof ItemDrainBlock) return ITEM_DRAIN;
+        if (b instanceof StockTickerBlock) return STOCK_TICKER;
+        if (b instanceof FrogportBlock || b instanceof PostboxBlock) return MAILBOX;
         return null;
     }
 

@@ -262,7 +262,7 @@ final class Factory implements Ability {
      * An order for each bot the command names that its source may order: {@code start} starts it, or
      * says why not. Answered as Tachyon answers: who went, or why none did.
      */
-    private static int each(CommandContext<CommandSourceStack> c, String doing, Function<Bot, String> start) throws CommandSyntaxException {
+    static int each(CommandContext<CommandSourceStack> c, String doing, Function<Bot, String> start) throws CommandSyntaxException {
         List<Bot> them = TachyonCommands.bots(c);
         if (them.isEmpty()) return 0;           // it already said why
         List<Bot> went = new ArrayList<>();
@@ -340,7 +340,11 @@ final class Factory implements Ability {
         near.looked = true;
         near.at = now;
         near.near = !Sight.blockEntities(body.serverLevel(), body.blockPosition(), NEAR,
-                (BlockEntity be) -> Machine.kind(be.getBlockState()) != null).isEmpty();
+                (BlockEntity be) -> {
+                    Machine k = Machine.kind(be.getBlockState());
+                    // A stock ticker or a mailbox is no machine for these tools: Post's own are offered there.
+                    return k != null && k != Machine.STOCK_TICKER && k != Machine.MAILBOX;
+                }).isEmpty();
         return near.near;
     }
 }
