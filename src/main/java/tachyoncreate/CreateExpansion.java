@@ -11,8 +11,8 @@ import java.util.Set;
 
 /**
  * What Tachyon: Create adds to Tachyon and makes fit: the factory's hands ({@link Factory}), the stock
- * networks' errands ({@link Post}), Create's things by the words players use for them, and Create's
- * tools kept as tools.
+ * networks' errands ({@link Post}), its trains driven ({@link Rail}), Create's things by the words
+ * players use for them, and Create's tools kept as tools.
  */
 final class CreateExpansion implements Expansion {
 
@@ -40,6 +40,8 @@ final class CreateExpansion implements Expansion {
         }
         setup.add(new Factory());
         setup.add(new Post());
+        setup.add(new Rail());
+        if (Boolean.getBoolean(DevBrain.PROPERTY)) setup.add(new DevTrain());
 
         Carried.WORDS.forEach((word, id) -> setup.alias(Setup.Names.ITEM, word, id));
         BLOCKS.forEach((word, id) -> setup.alias(Setup.Names.BLOCK, word, id));
