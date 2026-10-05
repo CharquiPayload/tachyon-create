@@ -41,7 +41,10 @@ final class CreateExpansion implements Expansion {
         setup.add(new Factory());
         setup.add(new Post());
         setup.add(new Rail());
-        if (Boolean.getBoolean(DevBrain.PROPERTY)) setup.add(new DevTrain());
+        // The railway to try trains on: a development run, or a test server with config/tachyon_create.dev in it.
+        if (Boolean.getBoolean(DevBrain.PROPERTY) || java.nio.file.Files.exists(java.nio.file.Path.of("config", "tachyon_create.dev"))) {
+            setup.add(new DevTrain());
+        }
 
         Carried.WORDS.forEach((word, id) -> setup.alias(Setup.Names.ITEM, word, id));
         BLOCKS.forEach((word, id) -> setup.alias(Setup.Names.BLOCK, word, id));

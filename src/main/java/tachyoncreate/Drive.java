@@ -84,6 +84,7 @@ final class Drive extends Job {
     @Override
     public String think(Bot bot, long now) {
         ServerPlayer body = bot.body();
+        GETTING_OFF.remove(body.getUUID());         // at a train again: it stays on
         if (phaseAt < 0) phaseAt = now;
         switch (phase) {
             case BOARD -> {
@@ -272,7 +273,21 @@ final class Drive extends Job {
         Train t = train(body);
         // Let go on the way, the train stops, as a player's does: its way is dropped with the key.
         if (t != null && t.navigation.destination != null) t.navigation.cancelNavigation();
-        if (Rails.riding(body) != null && (t == null || t.speed == 0)) body.stopRiding();
+        if (Rails.riding(body) == null) return;
+        if (t == null || t.speed == 0) body.stopRiding();
+        else GETTING_OFF.add(body.getUUID());        // still rolling: off once it stands ({@link Rail#reflex})
+    }
+
+    /** The bots that let go of a train still rolling: they get off once it stands. The server's thread's. */
+    static final java.util.Set<UUID> GETTING_OFF = new java.util.HashSet<>();
+
+    /** A bot that let go of a rolling train, off it once it stands; true once it is off, or gone from it. */
+    static boolean getOff(ServerPlayer body) {
+        CarriageContraptionEntity c = Rails.riding(body);
+        if (c == null) return true;
+        if (c.getCarriage().train.speed != 0) return false;
+        body.stopRiding();
+        return true;
     }
 
     @Override

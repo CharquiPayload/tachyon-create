@@ -43,6 +43,8 @@ final class DevTrain implements Ability {
         kit.on(RegisterCommandsEvent.class, e -> e.getDispatcher().register(Commands.literal("tcdev").requires(s -> s.hasPermission(2))
                 .then(Commands.literal("rail").then(Commands.argument("pos", BlockPosArgument.blockPos()).executes(DevTrain::rail)))
                 .then(Commands.literal("info").executes(DevTrain::info))
+                .then(Commands.literal("name").then(Commands.argument("pos", BlockPosArgument.blockPos())
+                        .then(Commands.argument("name", com.mojang.brigadier.arguments.StringArgumentType.greedyString()).executes(DevTrain::name))))
                 .then(Commands.literal("disassemble").then(Commands.argument("pos", BlockPosArgument.blockPos()).executes(DevTrain::disassemble)))
                 .then(Commands.literal("assemble").then(Commands.argument("pos", BlockPosArgument.blockPos()).executes(DevTrain::assemble)))));
     }
@@ -87,9 +89,24 @@ final class DevTrain implements Ability {
         String valid = s.edgePoint.hasValidTrack() + " at " + s.edgePoint.getGlobalPosition() + ", bogeys " + bogeys(s);
         c.getSource().sendSuccess(() -> Component.literal("assembly direction " + dir + ", track " + valid), false);
         s.assemble(UUID.randomUUID());
+        // Out of assembly mode, as a player's station is once its train is made: a station left in it is
+        // no stop, and stands in the way of every train that would pass it.
+        s.exitAssemblyMode();
         c.getSource().sendSuccess(() -> Component.literal("assembly mode " + mode + "; station " + (s.getStation() == null ? "none"
                 : s.getStation().name + ", train there: " + (s.getStation().getPresentTrain() != null))), false);
         return Command.SINGLE_SUCCESS;
+    }
+
+    private static int name(CommandContext<CommandSourceStack> c) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        BlockPos at = BlockPosArgument.getLoadedBlockPos(c, "pos");
+        String name = com.mojang.brigadier.arguments.StringArgumentType.getString(c, "name");
+        if (!(c.getSource().getLevel().getBlockEntity(at) instanceof StationBlockEntity s)) {
+            c.getSource().sendFailure(Component.literal("no station there"));
+            return 0;
+        }
+        boolean done = s.updateName(name);
+        c.getSource().sendSuccess(() -> Component.literal("named " + name + ": " + done), false);
+        return 1;
     }
 
     private static int disassemble(CommandContext<CommandSourceStack> c) throws com.mojang.brigadier.exceptions.CommandSyntaxException {

@@ -226,6 +226,20 @@ final class Rail implements Ability {
                 .asks("Who to pick up?", "A player's name.", 40, "fetch");
     }
 
+    // --- getting off --------------------------------------------------------------------------------------
+
+    @Override
+    public int reflexEvery() {
+        return 10;
+    }
+
+    /** A bot that let go of a train while it still rolled (told to stop on the way): off it once it stands. */
+    @Override
+    public void reflex(Bot bot, long now) {
+        if (Drive.GETTING_OFF.isEmpty() || !Drive.GETTING_OFF.contains(bot.body().getUUID())) return;
+        if (Drive.getOff(bot.body())) Drive.GETTING_OFF.remove(bot.body().getUUID());
+    }
+
     // --- helpers -----------------------------------------------------------------------------------------
 
     /** What a bot remembers between looks: whether a train was near, and when it last looked. */
