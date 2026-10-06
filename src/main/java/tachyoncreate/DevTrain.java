@@ -48,6 +48,8 @@ final class DevTrain implements Ability {
                                 .then(Commands.argument("address", com.mojang.brigadier.arguments.StringArgumentType.word()).executes(DevTrain::postbox)))))
                 .then(Commands.literal("package").then(Commands.argument("at", BlockPosArgument.blockPos())
                         .then(Commands.argument("address", com.mojang.brigadier.arguments.StringArgumentType.word()).executes(DevTrain::pack))))
+                .then(Commands.literal("drop").then(Commands.argument("at", BlockPosArgument.blockPos())
+                        .then(Commands.argument("address", com.mojang.brigadier.arguments.StringArgumentType.word()).executes(DevTrain::drop))))
                 .then(Commands.literal("name").then(Commands.argument("pos", BlockPosArgument.blockPos())
                         .then(Commands.argument("name", com.mojang.brigadier.arguments.StringArgumentType.greedyString()).executes(DevTrain::name))))
                 .then(Commands.literal("disassemble").then(Commands.argument("pos", BlockPosArgument.blockPos()).executes(DevTrain::disassemble)))
@@ -124,6 +126,19 @@ final class DevTrain implements Ability {
         boolean joined = level.getBlockEntity(station) instanceof StationBlockEntity s && s.getStation() != null
                 && s.getStation().connectedPorts.containsKey(at);
         c.getSource().sendSuccess(() -> Component.literal("postbox for " + address + " joined: " + joined), false);
+        return 1;
+    }
+
+    /** A package for an address (a dirt in it) lying on the ground at a place, as a shop's counter has them (M-L4BJ). */
+    private static int drop(CommandContext<CommandSourceStack> c) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
+        BlockPos at = BlockPosArgument.getLoadedBlockPos(c, "at");
+        String address = com.mojang.brigadier.arguments.StringArgumentType.getString(c, "address");
+        net.minecraft.world.item.ItemStack box = com.simibubi.create.content.logistics.box.PackageItem.containing(
+                java.util.List.of(new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.DIRT)));
+        com.simibubi.create.content.logistics.box.PackageItem.addAddress(box, address);
+        var level = c.getSource().getLevel();
+        level.addFreshEntity(new net.minecraft.world.entity.item.ItemEntity(level, at.getX() + 0.5, at.getY(), at.getZ() + 0.5, box, 0, 0, 0));
+        c.getSource().sendSuccess(() -> Component.literal("package for " + address + " on the ground at " + at.toShortString()), false);
         return 1;
     }
 

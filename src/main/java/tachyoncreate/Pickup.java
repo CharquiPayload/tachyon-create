@@ -90,7 +90,7 @@ final class Pickup extends MachineJob {
     }
 
     /** Whether it has all it waits for: when it waits for nothing in particular, what is there now is all. */
-    private boolean all() {
+    boolean all() {
         if (expected == null) return waitTicks == 0 || packages > 0;
         for (Map.Entry<Item, Integer> e : expected.entrySet()) {
             if (got.getOrDefault(e.getKey(), 0) < e.getValue()) return false;

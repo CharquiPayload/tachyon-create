@@ -96,17 +96,26 @@ final class Post implements Ability {
                     return "started walking to the stock ticker to order; not done yet";
                 });
 
-        kit.tool("collect_packages", "Take the packages out of a Create mailbox (a frogport or a postbox) and open them.")
+        kit.tool("collect_packages", "Take the packages out of a Create mailbox (a frogport or a postbox) and open them; with no"
+                        + " mailbox there, it picks up the packages lying on the ground there (some shops drop them on a counter).")
                 .optional("wait", "integer", "How long to wait there for packages on their way, in seconds; leave it out to take what's there")
                 .optional("open", "boolean", "Open them; true when left out")
-                .optional("x", "integer", "The mailbox's x, if you know it")
+                .optional("x", "integer", "The mailbox's x (or where the packages lie), if you know it")
                 .optional("y", "integer", "Its y")
                 .optional("z", "integer", "Its z")
                 .offeredWhen(Post::nearNetwork)
                 .run(call -> {
                     Targets.Pick pick = target(call, Machine.MAILBOX, "mailbox");
-                    if (pick.found() == null) return pick.why();
                     int wait = Math.max(0, Math.min(600, call.number("wait", 0)));
+                    if (pick.found() == null) {
+                        // No mailbox: the packages lying on the ground there, or by it (M-L4BJ).
+                        BlockPos at = call.args().has("x") && call.args().has("y") && call.args().has("z")
+                                ? new BlockPos(call.number("x", 0), call.number("y", 0), call.number("z", 0))
+                                : call.bot().body().blockPosition();
+                        if (!Ground.any(call.bot().body(), List.of(at), null)) return pick.why() + ", and no packages lie on the ground there";
+                        call.start(new Ground(List.of(at), null, null, wait * 20, call.flag("open", true)), "picking up packages");
+                        return "started picking up the packages on the ground there; not done yet";
+                    }
                     Pickup job = new Pickup(pick.options(), null, null, wait * 20, call.flag("open", true));
                     call.start(job, "picking up packages");
                     return "started walking to " + job.where() + " to take out its packages; not done yet";
