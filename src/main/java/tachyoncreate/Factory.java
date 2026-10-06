@@ -53,6 +53,16 @@ final class Factory implements Ability {
         return "factory";
     }
 
+    /**
+     * What Create adds to the world that its model can not know: where its ore lies. Asked, a bot said
+     * zinc was "most common near Y 40" (M-QCF8); Create 6 spreads it evenly from Y -63 to 70.
+     */
+    @Override
+    public void rules(Bot bot, java.util.List<String> lines) {
+        lines.add("Create zinc ore lies evenly anywhere from Y -63 to 70 in the overworld (no level is richer);"
+                + " strip mine for it above Y 0 (say Y 16), where stone breaks quicker than deepslate.");
+    }
+
     @Override
     public void declare(Kit kit) {
         kit.number(CRANK_TIME, 60, 5, MOST_SECONDS, "How long it turns a hand crank when told to, in seconds.")
