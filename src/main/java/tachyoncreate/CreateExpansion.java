@@ -41,6 +41,8 @@ final class CreateExpansion implements Expansion {
         setup.add(new Factory());
         setup.add(new Post());
         setup.add(new Rail());
+        // Moving belts and fans' currents: no route stands in them (M-KGL3).
+        setup.avoid(Hazards::avoid);
         // The railway to try trains on: a development run, or a test server with config/tachyon_create.dev in it.
         if (Boolean.getBoolean(DevBrain.PROPERTY) || java.nio.file.Files.exists(java.nio.file.Path.of("config", "tachyon_create.dev"))) {
             setup.add(new DevTrain());
